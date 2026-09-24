@@ -145,6 +145,16 @@ Admin
 
 ---
 
+## Geliştirme Sırası
+
+Backend önce, frontend sonra. Backend tamamen tamamlanmadan frontend'e geçilmez.
+
+- **Backend** — Go monolit, tüm API'lar, iş mantığı, veritabanı katmanı
+- **AWS altyapısı** — RDS, S3, SES, Transcribe, Polly gibi servisler kullanıcı tarafından manuel kurulur; ajan AWS kaynaklarını provision etmez, yönetmez veya AWS CLI/SDK komutları çalıştırmaz
+- **Frontend** — backend API'ları hazır olduktan sonra başlanır
+
+---
+
 ## Faz Planı
 
 ### Faz 1 — Temel Altyapı (Hafta 1-3)
