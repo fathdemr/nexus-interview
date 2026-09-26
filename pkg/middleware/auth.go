@@ -78,13 +78,19 @@ func CheckTokenWithoutAbort(validator auth.TokenValidator) gin.HandlerFunc {
 	}
 }
 
-// extractBearerToken strips the "Bearer " prefix from the Authorization header.
-// Returns an empty string when the header is absent or has an unexpected format.
+// extractBearerToken reads the token from the Authorization header first,
+// then falls back to the "access_token" HttpOnly cookie.
 func extractBearerToken(c *gin.Context) string {
 	raw := c.GetHeader("Authorization")
 	raw = strings.TrimPrefix(raw, "Bearer ")
 	raw = strings.TrimPrefix(raw, "bearer ")
-	return strings.TrimSpace(raw)
+	raw = strings.TrimSpace(raw)
+	if raw != "" {
+		return raw
+	}
+	// Fallback to HttpOnly cookie set by auth.Handler.SetTokenCookies
+	cookie, _ := c.Cookie("access_token")
+	return strings.TrimSpace(cookie)
 }
 
 // setCORSHeaders adds permissive CORS headers for all responses.

@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"db"`
+	Redis    RedisConfig    `mapstructure:"redis"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 }
 
@@ -62,22 +63,39 @@ func (d DatabaseConfig) DSN() string {
 
 // JWTConfig holds RSA key material for token signing and verification.
 type JWTConfig struct {
-	// PrivateKey is the RSA private key in PEM format used to sign tokens.
-	// Newline sequences (\n) are normalised automatically on load.
 	PrivateKey string `mapstructure:"privateKey"`
+	PublicKey  string `mapstructure:"publicKey"`
 
-	// PublicKey is the RSA public key in PEM format used to verify tokens.
-	// Newline sequences (\n) are normalised automatically on load.
-	PublicKey string `mapstructure:"publicKey"`
+	// AccessTokenExpirationMinutes is the short-lived access token lifetime.
+	// Example: 15
+	AccessTokenExpirationMinutes int `mapstructure:"accessTokenExpirationMinutes"`
 
-	// ExpirationHours is the token lifetime in hours.
-	// Example: 24
-	ExpirationHours int `mapstructure:"expirationHours"`
+	// RefreshTokenExpirationDays is the long-lived refresh token lifetime.
+	// Example: 7
+	RefreshTokenExpirationDays int `mapstructure:"refreshTokenExpirationDays"`
+
+	// CookieDomain is the domain attribute set on the access token cookie.
+	// Example: "nexus-interview.com" — leave empty for localhost.
+	CookieDomain string `mapstructure:"cookieDomain"`
+
+	// CookieSecure controls the Secure flag on the access token cookie.
+	// Set to true in production (HTTPS only).
+	CookieSecure bool `mapstructure:"cookieSecure"`
+}
+
+// RedisConfig holds connection parameters for the Redis cache.
+type RedisConfig struct {
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
+	// TLS enables TLS for the Redis connection.
+	// Required for AWS ElastiCache Serverless — set to true in production.
+	TLS bool `mapstructure:"tls"`
 }
 
 // Load reads config.yaml from the working directory and unmarshals it into Config.
 func Load() (Config, error) {
-	viper.SetConfigName("config")
+	viper.SetConfigName("config.yaml")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 
@@ -103,8 +121,14 @@ func Load() (Config, error) {
 	if cfg.Database.SSLMode == "" {
 		cfg.Database.SSLMode = "disable"
 	}
-	if cfg.JWT.ExpirationHours == 0 {
-		cfg.JWT.ExpirationHours = 24
+	if cfg.JWT.AccessTokenExpirationMinutes == 0 {
+		cfg.JWT.AccessTokenExpirationMinutes = 15
+	}
+	if cfg.JWT.RefreshTokenExpirationDays == 0 {
+		cfg.JWT.RefreshTokenExpirationDays = 7
+	}
+	if cfg.Redis.Addr == "" {
+		cfg.Redis.Addr = "localhost:6379"
 	}
 
 	return cfg, nil

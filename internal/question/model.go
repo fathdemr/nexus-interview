@@ -1,20 +1,20 @@
 package question
 
 import (
-	"github.com/gofrs/uuid/v5"
 	"github.com/fathdemr/nexus-interview/pkg/model"
+	"github.com/gofrs/uuid/v5"
 	"gorm.io/gorm"
 )
 
 // Question represents a single interview question linked to a job posting.
 type Question struct {
-	Id           string `gorm:"primaryKey;type:varchar(36)" json:"id"`
-	model.BaseRecordFields
+	Id string `gorm:"primaryKey;type:varchar(36)" json:"id"`
 
 	JobPostingId string `gorm:"not null;index;type:varchar(36)" json:"job_posting_id"`
 	Text         string `gorm:"not null;type:text"              json:"text"`
 	OrderIndex   int    `gorm:"not null;default:0"              json:"order_index"`
 
+	model.BaseRecordFields
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
