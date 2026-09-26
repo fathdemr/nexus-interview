@@ -14,6 +14,7 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"db"`
 	Redis    RedisConfig    `mapstructure:"redis"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
+	Swagger  SwaggerConfig  `mapstructure:"swagger"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -51,6 +52,11 @@ type DatabaseConfig struct {
 	// SSLMode controls TLS behaviour for the connection.
 	// Values: "disable" | "require" | "verify-full"
 	SSLMode string `mapstructure:"sslmode"`
+}
+
+type SwaggerConfig struct {
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
 }
 
 // DSN builds a PostgreSQL connection string from the config fields.
@@ -113,7 +119,7 @@ func Load() (Config, error) {
 	cfg.JWT.PublicKey = strings.ReplaceAll(cfg.JWT.PublicKey, `\n`, "\n")
 
 	if cfg.Server.Port == "" {
-		cfg.Server.Port = "8080"
+		cfg.Server.Port = "5075"
 	}
 	if cfg.Server.Mode == "" {
 		cfg.Server.Mode = "debug"

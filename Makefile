@@ -4,9 +4,9 @@
 # ============================
 
 # ==== Config ====
-IMAGE_NAME     ?= nexus
+IMAGE_NAME     ?= 060622564147.dkr.ecr.eu-central-1.amazonaws.com/nexus
 TAG            ?= $(shell date +%Y.%m.%d%H%M%S)
-PLATFORMS      ?= linux/amd64,linux/arm64
+PLATFORMS      ?= linux/arm64
 BUILD_ARGS     ?=
 
 # Clean tag (remove any whitespace)
@@ -36,11 +36,11 @@ help:
 
 # Build the Go binary
 buildFile: swag
-	@echo "Stamping version $(TAG) into config/version.go..."
-	@sed -i.bak 's/var Version = "[^"]*"/var Version = "$(TAG)"/' internal/config/version.go
-	@echo "Compiling for Linux amd64..."
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -a -installsuffix cgo -o ./dist/linux/api ./cmd/server
-	@mv internal/config/version.go.bak internal/config/version.go
+	@echo "Stamping version $(TAG) into pkg/config/version.go..."
+	@sed -i.bak 's/var Version = "[^"]*"/var Version = "$(TAG)"/' pkg/config/version.go
+	@echo "Compiling for Linux arm64..."
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-w -s" -a -installsuffix cgo -o ./dist/linux/api ./cmd/server
+	@mv pkg/config/version.go.bak pkg/config/version.go
 	@echo "Version restored to dev"
 
 

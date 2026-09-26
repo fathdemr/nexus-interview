@@ -72,6 +72,19 @@ func (h *Handler) ClearTokenCookies(c *gin.Context) {
 	c.SetCookie(refreshTokenCookie, "", -1, "/api/v1/auth", h.cfg.CookieDomain, h.cfg.CookieSecure, true)
 }
 
+// refresh rotates the token pair using the HttpOnly refresh cookie.
+//
+// @Summary      Refresh access token
+// @Description  Reads the `refresh_token` HttpOnly cookie (scoped to /api/v1/auth), validates it against the token store,
+// @Description  and issues a brand-new access/refresh pair. Both tokens are written back as HttpOnly cookies;
+// @Description  the response body carries no token. If the refresh token is unknown or expired the cookies are cleared
+// @Description  and the client must log in again.
+// @Tags         Auth
+// @Produce      json
+// @Success      200  {object}  httputil.BaseServiceResponse  "tokens refreshed — new cookies set"
+// @Failure      401  {object}  httputil.BaseServiceResponse  "UNAUTHORIZED — refresh cookie missing, invalid or expired"
+// @Failure      500  {object}  httputil.BaseServiceResponse  "INTERNAL_ERROR"
+// @Router       /auth/refresh [post]
 func (h *Handler) refresh(c *gin.Context) {
 	refreshToken, err := c.Cookie(refreshTokenCookie)
 	if err != nil || refreshToken == "" {
@@ -98,6 +111,19 @@ func (h *Handler) refresh(c *gin.Context) {
 		httputil.NewSuccessResponse("tokens refreshed", "OK", nil), nil)
 }
 
+// logout revokes the caller's refresh token and clears both auth cookies.
+//
+// @Summary      Logout
+// @Description  Invalidates the refresh token stored for the authenticated actor so it can no longer be used to mint
+// @Description  new access tokens, then expires the `access_token` and `refresh_token` cookies in the browser.
+// @Description  The current access token stays valid until its natural expiry.
+// @Tags         Auth
+// @Security     BearerAuth
+// @Produce      json
+// @Success      200  {object}  httputil.BaseServiceResponse  "logged out — cookies cleared"
+// @Failure      401  {object}  httputil.BaseServiceResponse  "UNAUTHORIZED — missing or invalid access token"
+// @Failure      500  {object}  httputil.BaseServiceResponse  "INTERNAL_ERROR"
+// @Router       /auth/logout [post]
 func (h *Handler) logout(c *gin.Context) {
 	actor := httputil.GetActor(c)
 

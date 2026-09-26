@@ -1,0 +1,1017 @@
+{
+    "schemes": [
+        "http",
+        "https"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "REST API for the Nexus AI-driven interview platform.\n\nAuthentication: protected endpoints accept a JWT either as an `Authorization: Bearer {token}` header\nor as the HttpOnly `access_token` cookie set by the auth endpoints. In Swagger UI, click Authorize and enter `Bearer {token}`.\n\nEvery response is wrapped in the standard envelope `{ success, message, code, data }`.\nOn 4xx/5xx responses the `message` field may be masked with a reference ID.",
+        "title": "Nexus Interview API",
+        "contact": {
+            "name": "Nexus Team"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api/v1",
+    "paths": {
+        "/admin/healthcheck": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Runs the admin service healthcheck (database and cache connectivity). Intended for authenticated\noperators and readiness probes that hold a token; use the public /healthcheck for plain liveness.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Dependency healthcheck",
+                "responses": {
+                    "200": {
+                        "description": "OK — all dependencies reachable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR — one or more dependencies unhealthy",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/logout": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Invalidates the refresh token stored for the authenticated actor so it can no longer be used to mint\nnew access tokens, then expires the `access_token` and `refresh_token` cookies in the browser.\nThe current access token stays valid until its natural expiry.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Logout",
+                "responses": {
+                    "200": {
+                        "description": "logged out — cookies cleared",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED — missing or invalid access token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/refresh": {
+            "post": {
+                "description": "Reads the `refresh_token` HttpOnly cookie (scoped to /api/v1/auth), validates it against the token store,\nand issues a brand-new access/refresh pair. Both tokens are written back as HttpOnly cookies;\nthe response body carries no token. If the refresh token is unknown or expired the cookies are cleared\nand the client must log in again.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Refresh access token",
+                "responses": {
+                    "200": {
+                        "description": "tokens refreshed — new cookies set",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED — refresh cookie missing, invalid or expired",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all candidates that have not been soft-deleted. No pagination or filtering is applied yet.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Candidates"
+                ],
+                "summary": "List candidates",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/internal_candidate.Candidate"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a candidate record from full name and e-mail. E-mail is unique across candidates;\na duplicate yields 409. The generated UUID is returned in `data.id`.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Candidates"
+                ],
+                "summary": "Create candidate",
+                "parameters": [
+                    {
+                        "description": "Candidate to create",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_candidate.CreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "CREATED",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/internal_candidate.Candidate"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "VALIDATION_ERROR — missing full_name or malformed email",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "ALREADY_EXISTS — a candidate with this email already exists",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/candidates/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fetches one candidate by its UUID. Soft-deleted candidates are treated as not found.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Candidates"
+                ],
+                "summary": "Get candidate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Candidate UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/internal_candidate.Candidate"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "VALIDATION_ERROR — empty id",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "NOT_FOUND",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates the candidate's display name. E-mail is the login identifier and cannot be changed here.\nReturns the full updated record.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Candidates"
+                ],
+                "summary": "Update candidate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Candidate UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_candidate.UpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/internal_candidate.Candidate"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "VALIDATION_ERROR — empty id or malformed body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "NOT_FOUND",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks the candidate as deleted (soft delete). The record is retained in the database but\ndisappears from list and get endpoints. Deleting an already-deleted or unknown id yields 404.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Candidates"
+                ],
+                "summary": "Delete candidate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Candidate UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "DELETED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "VALIDATION_ERROR — empty id",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "NOT_FOUND",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/healthcheck": {
+            "get": {
+                "description": "Returns 200 as long as the HTTP server is up. Does not check database or Redis; use /admin/healthcheck for that.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Liveness probe",
+                "responses": {
+                    "200": {
+                        "description": "status: ok",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/questions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a question bound to the given `job_posting_id`. `order_index` controls the position of the\nquestion inside the interview (lower first, default 0). The generated UUID is returned in `data.id`.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Questions"
+                ],
+                "summary": "Create question",
+                "parameters": [
+                    {
+                        "description": "Question to create",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_question.CreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "CREATED",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/internal_question.Question"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "VALIDATION_ERROR — missing job_posting_id or text",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/questions/job-posting/{jobPostingId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns every non-deleted question attached to the given job posting, ordered by `order_index`.\nAn unknown job posting yields an empty list, not 404.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Questions"
+                ],
+                "summary": "List questions of a job posting",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Job posting UUID",
+                        "name": "jobPostingId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/internal_question.Question"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "VALIDATION_ERROR — empty job posting id",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/questions/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Fetches one question by its UUID. Soft-deleted questions are treated as not found.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Questions"
+                ],
+                "summary": "Get question",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Question UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/internal_question.Question"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "VALIDATION_ERROR — empty id",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "NOT_FOUND",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates `text` and `order_index` of an existing question. The owning job posting cannot be changed;\ndelete and recreate the question to move it. Returns the full updated record.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Questions"
+                ],
+                "summary": "Update question",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Question UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_question.UpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/internal_question.Question"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "VALIDATION_ERROR — empty id or malformed body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "NOT_FOUND",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks the question as deleted (soft delete). It no longer appears in job posting listings.\nDeleting an already-deleted or unknown id yields 404.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Questions"
+                ],
+                "summary": "Delete question",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Question UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "DELETED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "VALIDATION_ERROR — empty id",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "UNAUTHORIZED",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "NOT_FOUND",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_fathdemr_nexus-interview_pkg_httputil.BaseServiceResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "description": "Code is a machine-readable status identifier for the client to act on.\nUse SCREAMING_SNAKE_CASE.\nExample: \"CREATED\" | \"NOT_FOUND\" | \"VALIDATION_ERROR\" | \"INTERNAL_ERROR\"",
+                    "type": "string"
+                },
+                "data": {
+                    "description": "Data carries the operation's result payload.\nOmitted from the JSON output when nil."
+                },
+                "message": {
+                    "description": "Message is a human-readable description of the outcome.\nOn 4xx/5xx responses this field is masked with a reference ID before reaching the client.\nExample: \"candidate created successfully\"",
+                    "type": "string"
+                },
+                "success": {
+                    "description": "Success indicates whether the operation completed without error.\nExample: true",
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_candidate.Candidate": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "created_by_name": {
+                    "type": "string"
+                },
+                "created_ip_address": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invite_expires_at": {
+                    "type": "string"
+                },
+                "invite_token": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                },
+                "updated_by_name": {
+                    "type": "string"
+                },
+                "updated_ip_address": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_candidate.CreateRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "full_name"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "full_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_candidate.UpdateRequest": {
+            "type": "object",
+            "properties": {
+                "full_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_question.CreateRequest": {
+            "type": "object",
+            "required": [
+                "job_posting_id",
+                "text"
+            ],
+            "properties": {
+                "job_posting_id": {
+                    "type": "string"
+                },
+                "order_index": {
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_question.Question": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "created_by_name": {
+                    "type": "string"
+                },
+                "created_ip_address": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "job_posting_id": {
+                    "type": "string"
+                },
+                "order_index": {
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                },
+                "updated_by_name": {
+                    "type": "string"
+                },
+                "updated_ip_address": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_question.UpdateRequest": {
+            "type": "object",
+            "properties": {
+                "order_index": {
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Enter the token as: Bearer {token}",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    },
+    "tags": [
+        {
+            "description": "Token refresh and logout. Login is exposed by the module owning the credentials (admin / candidate).",
+            "name": "Auth"
+        },
+        {
+            "description": "Operational endpoints for administrators.",
+            "name": "Admin"
+        },
+        {
+            "description": "Manage job applicants invited to take an interview.",
+            "name": "Candidates"
+        },
+        {
+            "description": "Manage interview questions attached to a job posting.",
+            "name": "Questions"
+        },
+        {
+            "description": "Unauthenticated liveness endpoints.",
+            "name": "System"
+        }
+    ]
+}

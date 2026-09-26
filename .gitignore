@@ -9,7 +9,7 @@ config.yaml
 *.exe
 *.test
 *.out
-server
+/server
 
 # Editor / OS
 .DS_Store
