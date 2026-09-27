@@ -4,7 +4,7 @@
 # ============================
 
 # ==== Config ====
-IMAGE_NAME     ?= 060622564147.dkr.ecr.eu-central-1.amazonaws.com/nexus
+IMAGE_NAME     ?= 060622564147.dkr.ecr.eu-central-1.amazonaws.com/nexus-backend-dev
 TAG            ?= $(shell date +%Y.%m.%d%H%M%S)
 PLATFORMS      ?= linux/arm64
 BUILD_ARGS     ?=

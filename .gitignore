@@ -1,7 +1,8 @@
 # Secrets and config — never commit
 *.pem
-config.yaml
-.env
+*.yaml
+*.yml
+*.env
 
 # Go build artifacts
 /bin/
