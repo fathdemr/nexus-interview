@@ -45,7 +45,7 @@ func main() {
 		logger.S().Fatalf("migrate database: %v", err)
 	}
 
-	redisClient, err := cache.NewClient(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB, cfg.Redis.TLS)
+	redisClient, err := cache.NewClient(cfg.Redis.Addr, cfg.Redis.Pass, cfg.Redis.DB, cfg.Redis.TLS)
 	if err != nil {
 		logger.S().Fatalf("connect redis: %v", err)
 	}

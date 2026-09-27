@@ -7,119 +7,110 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config holds all runtime configuration loaded from config.yaml.
-// Add new fields here as the project grows; never read viper directly outside this package.
+// Config holds all runtime configuration loaded from environment variables.
+// Never read viper directly outside this package.
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"db"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	JWT      JWTConfig      `mapstructure:"jwt"`
-	Swagger  SwaggerConfig  `mapstructure:"swagger"`
+	Server   ServerConfig
+	Database DatabaseConfig
+	Redis    RedisConfig
+	JWT      JWTConfig
+	Swagger  SwaggerConfig
 }
 
-// ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	// Port is the TCP port the server listens on.
-	// Example: "8080"
-	Port string `mapstructure:"port"`
-
-	// Mode controls Gin's run mode.
-	// Values: "debug" | "release" | "test"
-	Mode string `mapstructure:"mode"`
+	Port string
+	Mode string
 }
 
-// DatabaseConfig holds PostgreSQL connection parameters.
 type DatabaseConfig struct {
-	// Host is the database server address.
-	// Example: "localhost" or "nexus-db.xxxx.rds.amazonaws.com"
-	Host string `mapstructure:"host"`
-
-	// Port is the database server port.
-	// Example: "5432"
-	Port string `mapstructure:"port"`
-
-	// User is the PostgreSQL role used to authenticate.
-	// Example: "nexus_user"
-	User string `mapstructure:"user"`
-
-	// Password is the PostgreSQL role password.
-	Password string `mapstructure:"password"`
-
-	// Name is the target database name.
-	// Example: "nexus_interview"
-	Name string `mapstructure:"name"`
-
-	// SSLMode controls TLS behaviour for the connection.
-	// Values: "disable" | "require" | "verify-full"
-	SSLMode string `mapstructure:"sslmode"`
+	Host    string
+	Port    string
+	User    string
+	Pass    string
+	Name    string
+	SSLMode string
 }
 
-type SwaggerConfig struct {
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-}
-
-// DSN builds a PostgreSQL connection string from the config fields.
 func (d DatabaseConfig) DSN() string {
 	return fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=UTC",
-		d.Host, d.Port, d.User, d.Password, d.Name, d.SSLMode,
+		d.Host, d.Port, d.User, d.Pass, d.Name, d.SSLMode,
 	)
 }
 
-// JWTConfig holds RSA key material for token signing and verification.
-type JWTConfig struct {
-	PrivateKey string `mapstructure:"privateKey"`
-	PublicKey  string `mapstructure:"publicKey"`
-
-	// AccessTokenExpirationMinutes is the short-lived access token lifetime.
-	// Example: 15
-	AccessTokenExpirationMinutes int `mapstructure:"accessTokenExpirationMinutes"`
-
-	// RefreshTokenExpirationDays is the long-lived refresh token lifetime.
-	// Example: 7
-	RefreshTokenExpirationDays int `mapstructure:"refreshTokenExpirationDays"`
-
-	// CookieDomain is the domain attribute set on the access token cookie.
-	// Example: "nexus-interview.com" — leave empty for localhost.
-	CookieDomain string `mapstructure:"cookieDomain"`
-
-	// CookieSecure controls the Secure flag on the access token cookie.
-	// Set to true in production (HTTPS only).
-	CookieSecure bool `mapstructure:"cookieSecure"`
-}
-
-// RedisConfig holds connection parameters for the Redis cache.
 type RedisConfig struct {
-	Addr     string `mapstructure:"addr"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
-	// TLS enables TLS for the Redis connection.
-	// Required for AWS ElastiCache Serverless — set to true in production.
-	TLS bool `mapstructure:"tls"`
+	Addr string
+	Pass string
+	DB   int
+	TLS  bool
 }
 
-// Load reads config.yaml from the working directory and unmarshals it into Config.
+type JWTConfig struct {
+	PrivateKey                   string
+	PublicKey                    string
+	AccessTokenExpirationMinutes int
+	RefreshTokenExpirationDays   int
+	CookieDomain                 string
+	CookieSecure                 bool
+}
+
+type SwaggerConfig struct {
+	Username string
+	Password string
+}
+
+// Load reads configuration exclusively from environment variables.
+// A .env file in the working directory is loaded as a fallback for local development;
+// real environment variables always take precedence.
 func Load() (Config, error) {
-	viper.SetConfigName("config.yaml")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
+	viper.AutomaticEnv()
 
-	if err := viper.ReadInConfig(); err != nil {
-		return Config{}, fmt.Errorf("read config file: %w", err)
+	viper.SetConfigFile(".env")
+	viper.SetConfigType("env")
+	_ = viper.ReadInConfig() // .env is optional — missing file is not an error
+
+	cfg := Config{
+		Server: ServerConfig{
+			Port: viper.GetString("SERVER_PORT"),
+			Mode: viper.GetString("SERVER_MODE"),
+		},
+		Database: DatabaseConfig{
+			Host:    viper.GetString("DB_HOST"),
+			Port:    viper.GetString("DB_PORT"),
+			User:    viper.GetString("DB_USER"),
+			Pass:    viper.GetString("DB_PASS"),
+			Name:    viper.GetString("DB_NAME"),
+			SSLMode: viper.GetString("DB_SSLMODE"),
+		},
+		Redis: RedisConfig{
+			Addr: viper.GetString("REDIS_ADDR"),
+			Pass: viper.GetString("REDIS_PASS"),
+			DB:   viper.GetInt("REDIS_DB"),
+			TLS:  viper.GetBool("REDIS_TLS"),
+		},
+		JWT: JWTConfig{
+			PrivateKey:                   normalizeKey(viper.GetString("PRIVATE_KEY")),
+			PublicKey:                    normalizeKey(viper.GetString("PUBLIC_KEY")),
+			AccessTokenExpirationMinutes: viper.GetInt("ACCESS_TOKEN_EXPIRATION_MINUTES"),
+			RefreshTokenExpirationDays:   viper.GetInt("REFRESH_TOKEN_EXPIRATION_DAYS"),
+			CookieDomain:                 viper.GetString("COOKIE_DOMAIN"),
+			CookieSecure:                 viper.GetBool("COOKIE_SECURE"),
+		},
+		Swagger: SwaggerConfig{
+			Username: viper.GetString("SWAGGER_USERNAME"),
+			Password: viper.GetString("SWAGGER_PASS"),
+		},
 	}
 
-	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
-		return Config{}, fmt.Errorf("unmarshal config: %w", err)
-	}
+	setDefaults(&cfg)
 
-	// Normalise PEM newlines — config.yaml may store them as literal \n
-	cfg.JWT.PrivateKey = strings.ReplaceAll(cfg.JWT.PrivateKey, `\n`, "\n")
-	cfg.JWT.PublicKey = strings.ReplaceAll(cfg.JWT.PublicKey, `\n`, "\n")
+	return cfg, nil
+}
 
+// setDefaults fills in safe fallback values for optional fields.
+func setDefaults(cfg *Config) {
 	if cfg.Server.Port == "" {
-		cfg.Server.Port = "5075"
+		cfg.Server.Port = "8080"
 	}
 	if cfg.Server.Mode == "" {
 		cfg.Server.Mode = "debug"
@@ -127,15 +118,18 @@ func Load() (Config, error) {
 	if cfg.Database.SSLMode == "" {
 		cfg.Database.SSLMode = "disable"
 	}
+	if cfg.Redis.Addr == "" {
+		cfg.Redis.Addr = "localhost:6379"
+	}
 	if cfg.JWT.AccessTokenExpirationMinutes == 0 {
 		cfg.JWT.AccessTokenExpirationMinutes = 15
 	}
 	if cfg.JWT.RefreshTokenExpirationDays == 0 {
 		cfg.JWT.RefreshTokenExpirationDays = 7
 	}
-	if cfg.Redis.Addr == "" {
-		cfg.Redis.Addr = "localhost:6379"
-	}
+}
 
-	return cfg, nil
+// normalizeKey converts escaped newlines in PEM keys stored as single-line env vars.
+func normalizeKey(raw string) string {
+	return strings.ReplaceAll(raw, `\n`, "\n")
 }
