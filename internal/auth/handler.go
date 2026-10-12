@@ -2,10 +2,12 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/fathdemr/nexus-interview/pkg/httputil"
+	"github.com/fathdemr/nexus-interview/pkg/ratelimit"
 	"github.com/gin-gonic/gin"
 )
 
@@ -27,21 +29,21 @@ type HandlerConfig struct {
 	RefreshTokenExpirationDays int
 }
 
-// Handler exposes auth endpoints: refresh and logout.
-// Token issuance (login) is the responsibility of the module that owns user credentials
-// (e.g. admin or candidate) — they call IssueTokenPair and delegate cookie writing here.
+// Handler exposes auth endpoints: register, login, refresh and logout.
 type Handler struct {
 	service Service
 	cfg     HandlerConfig
+	limiter *ratelimit.Limiter
 }
 
-func NewHandler(service Service, cfg HandlerConfig) *Handler {
-	return &Handler{service: service, cfg: cfg}
+func NewHandler(service Service, cfg HandlerConfig, limiter *ratelimit.Limiter) *Handler {
+	return &Handler{service: service, cfg: cfg, limiter: limiter}
 }
 
-// RegisterRoutes attaches the refresh route to the given router group.
-// Logout is registered separately on a protected group (requires valid token).
+// RegisterRoutes attaches public auth routes to the given router group.
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
+	rg.POST("/register", h.limiter.Middleware("register"), h.register)
+	rg.POST("/login", h.limiter.Middleware("login"), h.login)
 	rg.POST("/refresh", h.refresh)
 }
 
@@ -70,6 +72,131 @@ func (h *Handler) SetTokenCookies(c *gin.Context, pair TokenPair) {
 func (h *Handler) ClearTokenCookies(c *gin.Context) {
 	c.SetCookie(accessTokenCookie, "", -1, "/", h.cfg.CookieDomain, h.cfg.CookieSecure, true)
 	c.SetCookie(refreshTokenCookie, "", -1, "/api/v1/auth", h.cfg.CookieDomain, h.cfg.CookieSecure, true)
+}
+
+// register creates a new user account and returns an access/refresh token pair as cookies.
+//
+// @Summary      Register
+// @Description  Creates a new user with the specified role (admin or candidate).
+// @Description  On success, sets `access_token` and `refresh_token` as HttpOnly cookies.
+// @Description  Returns 409 if the email is already registered.
+// @Description  Returns 429 after 5 consecutive failed attempts from the same IP (locked for 1 minute).
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      RegisterRequest               true  "Registration payload"
+// @Success      201   {object}  httputil.BaseServiceResponse        "account created — cookies set"
+// @Failure      400   {object}  httputil.BaseServiceResponse        "VALIDATION_ERROR"
+// @Failure      409   {object}  httputil.BaseServiceResponse        "CONFLICT — email already registered"
+// @Failure      429   {object}  httputil.BaseServiceResponse        "RATE_LIMITED — too many failed attempts"
+// @Failure      500   {object}  httputil.BaseServiceResponse        "INTERNAL_ERROR"
+// @Router       /auth/register [post]
+func (h *Handler) register(c *gin.Context) {
+	var req RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.limiter.RecordFailure("register", c.ClientIP())
+		httputil.GinJSON(c, http.StatusBadRequest,
+			httputil.NewErrorResponse(err.Error(), "VALIDATION_ERROR"), nil)
+		return
+	}
+
+	pair, err := h.service.Register(c.Request.Context(), req)
+	if err != nil {
+		locked, retryAfter := h.limiter.RecordFailure("register", c.ClientIP())
+		if locked {
+			secs := int(retryAfter.Seconds())
+			if secs < 1 {
+				secs = 1
+			}
+			c.Header("Retry-After", fmt.Sprintf("%d", secs))
+			httputil.GinJSON(c, http.StatusTooManyRequests,
+				httputil.NewErrorResponse(
+					fmt.Sprintf("too many failed attempts, try again in %ds", secs),
+					"RATE_LIMITED",
+				), nil)
+			return
+		}
+
+		switch {
+		case errors.Is(err, ErrAlreadyExists):
+			httputil.GinJSON(c, http.StatusConflict,
+				httputil.NewErrorResponse("email already registered", "CONFLICT"), nil)
+		case errors.Is(err, ErrInvalidRole):
+			httputil.GinJSON(c, http.StatusBadRequest,
+				httputil.NewErrorResponse("role must be admin or candidate", "VALIDATION_ERROR"), nil)
+		default:
+			httputil.GinJSON(c, http.StatusInternalServerError,
+				httputil.NewErrorResponse("registration failed", "INTERNAL_ERROR"), nil)
+		}
+		return
+	}
+
+	h.limiter.Reset("register", c.ClientIP())
+	h.SetTokenCookies(c, pair)
+	httputil.GinJSON(c, http.StatusCreated,
+		httputil.NewSuccessResponse("account created", "CREATED", nil), nil)
+}
+
+// login authenticates a user with email and password and returns a token pair as cookies.
+//
+// @Summary      Login
+// @Description  Validates the email/password pair and, on success, issues a new access/refresh token pair
+// @Description  written as HttpOnly cookies. Returns a generic 401 for both unknown email and wrong password
+// @Description  to prevent user enumeration.
+// @Description  Returns 429 after 5 consecutive failed attempts from the same IP (locked for 1 minute).
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      LoginRequest                  true  "Login credentials"
+// @Success      200   {object}  httputil.BaseServiceResponse        "authenticated — cookies set"
+// @Failure      400   {object}  httputil.BaseServiceResponse        "VALIDATION_ERROR"
+// @Failure      401   {object}  httputil.BaseServiceResponse        "UNAUTHORIZED — invalid credentials"
+// @Failure      429   {object}  httputil.BaseServiceResponse        "RATE_LIMITED — too many failed attempts"
+// @Failure      500   {object}  httputil.BaseServiceResponse        "INTERNAL_ERROR"
+// @Router       /auth/login [post]
+func (h *Handler) login(c *gin.Context) {
+	var req LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.limiter.RecordFailure("login", c.ClientIP())
+		httputil.GinJSON(c, http.StatusBadRequest,
+			httputil.NewErrorResponse(err.Error(), "VALIDATION_ERROR"), nil)
+		return
+	}
+
+	pair, err := h.service.Login(c.Request.Context(), req)
+	if err != nil {
+		locked, retryAfter := h.limiter.RecordFailure("login", c.ClientIP())
+		if locked {
+			secs := int(retryAfter.Seconds())
+			if secs < 1 {
+				secs = 1
+			}
+			c.Header("Retry-After", fmt.Sprintf("%d", secs))
+			httputil.GinJSON(c, http.StatusTooManyRequests,
+				httputil.NewErrorResponse(
+					fmt.Sprintf("too many failed attempts, try again in %ds", secs),
+					"RATE_LIMITED",
+				), nil)
+			return
+		}
+
+		// Return the same message for ErrNotFound and ErrInvalidPassword to prevent
+		// user enumeration — an attacker must not be able to tell whether an email exists.
+		if errors.Is(err, ErrNotFound) || errors.Is(err, ErrInvalidPassword) {
+			httputil.GinJSON(c, http.StatusUnauthorized,
+				httputil.NewErrorResponse("invalid email or password", "UNAUTHORIZED"), nil)
+			return
+		}
+
+		httputil.GinJSON(c, http.StatusInternalServerError,
+			httputil.NewErrorResponse("login failed", "INTERNAL_ERROR"), nil)
+		return
+	}
+
+	h.limiter.Reset("login", c.ClientIP())
+	h.SetTokenCookies(c, pair)
+	httputil.GinJSON(c, http.StatusOK,
+		httputil.NewSuccessResponse("authenticated", "OK", nil), nil)
 }
 
 // refresh rotates the token pair using the HttpOnly refresh cookie.

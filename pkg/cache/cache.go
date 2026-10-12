@@ -133,6 +133,25 @@ func (c *Service) ExtendTTL(key string, penalty time.Duration) error {
 	return c.redis.Expire(ctx, key, ttl+penalty).Err()
 }
 
+// Incr atomically increments the integer value of a key by one and returns the new value.
+// If the key does not exist it is created with value 0 before the increment.
+func (c *Service) Incr(key string) (int64, error) {
+	return c.redis.Incr(context.Background(), key).Result()
+}
+
+// TTLDuration returns the remaining TTL of a key.
+// Returns (0, nil) when the key exists but has no TTL.
+// Returns (-1, nil) when the key does not exist.
+func (c *Service) TTLDuration(key string) (time.Duration, error) {
+	return c.redis.TTL(context.Background(), key).Result()
+}
+
+// SetExpire sets (or overwrites) the TTL on an existing key.
+// Returns an error if the key does not exist.
+func (c *Service) SetExpire(key string, ttl time.Duration) error {
+	return c.redis.Expire(context.Background(), key, ttl).Err()
+}
+
 func (c *Service) SetMultipleKeyValues(keyValues map[string]any, bulkSize ...int) error {
 	chunkSize := ChunkSize
 	if len(bulkSize) > 0 {
