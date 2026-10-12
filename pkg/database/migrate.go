@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/fathdemr/nexus-interview/internal/candidate"
+	jobposting "github.com/fathdemr/nexus-interview/internal/job_posting"
 	"github.com/fathdemr/nexus-interview/internal/question"
 	"github.com/fathdemr/nexus-interview/pkg/model"
 	"gorm.io/gorm"
@@ -16,6 +17,7 @@ func Migrate(db *gorm.DB) error {
 		&model.User{},
 		&candidate.Candidate{},
 		&question.Question{},
+		&jobposting.JobPosting{},
 	); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}

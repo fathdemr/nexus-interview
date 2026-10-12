@@ -15,12 +15,14 @@ import (
 	"github.com/fathdemr/nexus-interview/internal/admin"
 	"github.com/fathdemr/nexus-interview/internal/auth"
 	"github.com/fathdemr/nexus-interview/internal/candidate"
+	jobposting "github.com/fathdemr/nexus-interview/internal/job_posting"
 	"github.com/fathdemr/nexus-interview/internal/question"
 	"github.com/fathdemr/nexus-interview/pkg/cache"
 	"github.com/fathdemr/nexus-interview/pkg/config"
 	"github.com/fathdemr/nexus-interview/pkg/database"
 	"github.com/fathdemr/nexus-interview/pkg/logger"
 	"github.com/fathdemr/nexus-interview/pkg/middleware"
+	"github.com/fathdemr/nexus-interview/pkg/model"
 	"github.com/fathdemr/nexus-interview/pkg/ratelimit"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -56,6 +58,7 @@ func main() {
 	authRepo := auth.NewRepository(db)
 	candidateRepo := candidate.NewRepository(db)
 	questionRepo := question.NewRepository(db)
+	jobPostingRepo := jobposting.NewRepository(db)
 
 	// Services
 	authService := auth.NewService(
@@ -69,6 +72,7 @@ func main() {
 	adminService := admin.NewService()
 	candidateService := candidate.NewService(candidateRepo)
 	questionService := question.NewService(questionRepo)
+	jobPostingService := jobposting.NewService(jobPostingRepo)
 
 	// Auth handler — rate limiter: 5 failed attempts per IP → 1 minute lock.
 	authHandlerCfg := auth.HandlerConfig{
@@ -78,6 +82,7 @@ func main() {
 	}
 	authLimiter := ratelimit.New(cacheService, 5, time.Minute)
 	authHandler := auth.NewHandler(authService, authHandlerCfg, authLimiter)
+	jobPostingHandler := jobposting.NewHandler(jobPostingService, cfg.App.BaseURL)
 
 	gin.SetMode(cfg.Server.Mode)
 	router := gin.New()
@@ -94,6 +99,7 @@ func main() {
 	{
 		public.GET("/health", publicHealthcheck)
 		authHandler.RegisterRoutes(public.Group("/auth"))
+		jobPostingHandler.RegisterPublicRoutes(public.Group("/job-postings"))
 	}
 
 	protected := router.Group("/api/v1")
@@ -103,6 +109,11 @@ func main() {
 		admin.NewHandler(adminService).RegisterRoutes(protected.Group("/admin"))
 		candidate.NewHandler(candidateService).RegisterRoutes(protected.Group("/candidates"))
 		question.NewHandler(questionService).RegisterRoutes(protected.Group("/questions"))
+
+		// Job postings — write operations are restricted to admin role.
+		adminJobPostings := protected.Group("/job-postings")
+		adminJobPostings.Use(middleware.RequireRole(string(model.RoleAdmin)))
+		jobPostingHandler.RegisterRoutes(adminJobPostings)
 	}
 
 	addr := fmt.Sprintf(":%s", cfg.Server.Port)

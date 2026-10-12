@@ -15,6 +15,7 @@ type Config struct {
 	Redis    RedisConfig
 	JWT      JWTConfig
 	Swagger  SwaggerConfig
+	App      AppConfig
 }
 
 type ServerConfig struct {
@@ -59,6 +60,10 @@ type SwaggerConfig struct {
 	Password string
 }
 
+type AppConfig struct {
+	BaseURL string
+}
+
 // Load reads configuration exclusively from environment variables.
 // A .env file in the working directory is loaded as a fallback for local development;
 // real environment variables always take precedence.
@@ -100,6 +105,9 @@ func Load() (Config, error) {
 			Username: viper.GetString("SWAGGER_USERNAME"),
 			Password: viper.GetString("SWAGGER_PASS"),
 		},
+		App: AppConfig{
+			BaseURL: viper.GetString("APP_BASE_URL"),
+		},
 	}
 
 	setDefaults(&cfg)
@@ -126,6 +134,9 @@ func setDefaults(cfg *Config) {
 	}
 	if cfg.JWT.RefreshTokenExpirationDays == 0 {
 		cfg.JWT.RefreshTokenExpirationDays = 7
+	}
+	if cfg.App.BaseURL == "" {
+		cfg.App.BaseURL = "http://localhost:8080"
 	}
 }
 

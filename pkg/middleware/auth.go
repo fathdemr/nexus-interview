@@ -78,6 +78,30 @@ func CheckTokenWithoutAbort(validator auth.TokenValidator) gin.HandlerFunc {
 	}
 }
 
+// RequireRole aborts with 403 if the authenticated actor's role is not in the
+// allowed list. Must be used after CheckToken (actor must already be set).
+//
+// Usage:
+//
+//	protected.Group("/job-postings").Use(middleware.RequireRole("admin"))
+//	protected.Group("/reports").Use(middleware.RequireRole("admin", "recruiter"))
+func RequireRole(roles ...string) gin.HandlerFunc {
+	allowed := make(map[string]struct{}, len(roles))
+	for _, r := range roles {
+		allowed[r] = struct{}{}
+	}
+
+	return func(c *gin.Context) {
+		actor := httputil.GetActor(c)
+		if _, ok := allowed[actor.Role]; !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden,
+				httputil.NewErrorResponse("insufficient permissions", "FORBIDDEN"))
+			return
+		}
+		c.Next()
+	}
+}
+
 // extractBearerToken reads the token from the Authorization header first,
 // then falls back to the "access_token" HttpOnly cookie.
 func extractBearerToken(c *gin.Context) string {
