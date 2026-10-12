@@ -3,6 +3,7 @@
 *.yaml
 *.yml
 *.env
+*.md
 
 # Go build artifacts
 /bin/

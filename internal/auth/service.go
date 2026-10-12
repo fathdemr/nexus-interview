@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/fathdemr/nexus-interview/pkg/cache"
+	"github.com/fathdemr/nexus-interview/pkg/model"
 	"github.com/gofrs/uuid/v5"
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -53,6 +55,7 @@ type service struct {
 	accessTokenExpirationMinutes int
 	refreshTokenExpirationDays   int
 	cache                        *cache.Service
+	repo                         Repository
 
 	privateKeyOnce sync.Once
 	privateKey     *rsa.PrivateKey
@@ -68,6 +71,7 @@ func NewService(
 	privateKeyPEM, publicKeyPEM string,
 	accessTokenExpirationMinutes, refreshTokenExpirationDays int,
 	cache *cache.Service,
+	repo Repository,
 ) Service {
 	return &service{
 		privateKeyPEM:                privateKeyPEM,
@@ -75,6 +79,7 @@ func NewService(
 		accessTokenExpirationMinutes: accessTokenExpirationMinutes,
 		refreshTokenExpirationDays:   refreshTokenExpirationDays,
 		cache:                        cache,
+		repo:                         repo,
 	}
 }
 
@@ -204,6 +209,72 @@ func (s *service) ValidateToken(_ context.Context, raw string) (Claims, error) {
 		Role:      parsed.Role,
 		ExpiresAt: parsed.ExpiresAt.Time,
 	}, nil
+}
+
+// Login authenticates a user by email and password and returns a token pair.
+// ErrNotFound is returned when no account exists for the email.
+// ErrInvalidPassword is returned when the password does not match the stored hash.
+// Both errors are intentionally distinct so the service layer can decide whether
+// to expose them merged (prevents user enumeration) or separately (internal use).
+func (s *service) Login(ctx context.Context, req LoginRequest) (TokenPair, error) {
+	user, err := s.repo.FindByEmail(ctx, req.Email)
+	if err != nil {
+		return TokenPair{}, ErrNotFound
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+		return TokenPair{}, ErrInvalidPassword
+	}
+
+	claims := Claims{
+		UserID:   user.Id,
+		FullName: user.FirstName + " " + user.LastName,
+		Email:    user.Email,
+		Role:     string(user.Role),
+	}
+
+	return s.IssueTokenPair(ctx, claims)
+}
+
+// Register creates a new user account with the given role and returns a token pair.
+// Password is hashed with bcrypt before persistence; the plain-text value is never stored.
+func (s *service) Register(ctx context.Context, req RegisterRequest) (TokenPair, error) {
+	// Validate role
+	if req.Role != model.RoleAdmin && req.Role != model.RoleCandidate {
+		return TokenPair{}, ErrInvalidRole
+	}
+
+	if s.repo.IsExists(ctx, req.Email) {
+		return TokenPair{}, ErrAlreadyExists
+	}
+
+	// Hash password with bcrypt (cost 12 — good balance of security and latency)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return TokenPair{}, fmt.Errorf("hash password: %w", err)
+	}
+
+	user := model.User{
+		FirstName: req.FirstName,
+		LastName:  req.LastName,
+		Email:     req.Email,
+		Password:  string(hash),
+		Role:      req.Role,
+	}
+
+	created, err := s.repo.Create(ctx, user)
+	if err != nil {
+		return TokenPair{}, fmt.Errorf("persist user: %w", err)
+	}
+
+	claims := Claims{
+		UserID:   created.Id,
+		FullName: created.FirstName + " " + created.LastName,
+		Email:    created.Email,
+		Role:     string(created.Role),
+	}
+
+	return s.IssueTokenPair(ctx, claims)
 }
 
 // --- internal helpers ---

@@ -21,6 +21,7 @@ import (
 	"github.com/fathdemr/nexus-interview/pkg/database"
 	"github.com/fathdemr/nexus-interview/pkg/logger"
 	"github.com/fathdemr/nexus-interview/pkg/middleware"
+	"github.com/fathdemr/nexus-interview/pkg/ratelimit"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -51,33 +52,37 @@ func main() {
 	}
 	cacheService := cache.New(redisClient)
 
+	// Repositories
+	authRepo := auth.NewRepository(db)
+	candidateRepo := candidate.NewRepository(db)
+	questionRepo := question.NewRepository(db)
+
+	// Services
 	authService := auth.NewService(
 		cfg.JWT.PrivateKey,
 		cfg.JWT.PublicKey,
 		cfg.JWT.AccessTokenExpirationMinutes,
 		cfg.JWT.RefreshTokenExpirationDays,
 		cacheService,
+		authRepo,
 	)
+	adminService := admin.NewService()
+	candidateService := candidate.NewService(candidateRepo)
+	questionService := question.NewService(questionRepo)
 
+	// Auth handler — rate limiter: 5 failed attempts per IP → 1 minute lock.
 	authHandlerCfg := auth.HandlerConfig{
 		CookieDomain:               cfg.JWT.CookieDomain,
 		CookieSecure:               cfg.JWT.CookieSecure,
 		RefreshTokenExpirationDays: cfg.JWT.RefreshTokenExpirationDays,
 	}
-
-	candidateRepo := candidate.NewRepository(db)
-	questionRepo := question.NewRepository(db)
-
-	adminService := admin.NewService()
-	candidateService := candidate.NewService(candidateRepo)
-	questionService := question.NewService(questionRepo)
+	authLimiter := ratelimit.New(cacheService, 5, time.Minute)
+	authHandler := auth.NewHandler(authService, authHandlerCfg, authLimiter)
 
 	gin.SetMode(cfg.Server.Mode)
 	router := gin.New()
 	router.Use(middleware.Recovery())
 	router.Use(middleware.RequestLogger())
-
-	authHandler := auth.NewHandler(authService, authHandlerCfg)
 
 	// Swagger UI — served outside /api/v1 so it is never behind auth middleware.
 	router.GET("/swagger/*any", gin.BasicAuth(
@@ -87,7 +92,7 @@ func main() {
 
 	public := router.Group("/api/v1")
 	{
-		public.GET("/healthcheck", publicHealthcheck)
+		public.GET("/health", publicHealthcheck)
 		authHandler.RegisterRoutes(public.Group("/auth"))
 	}
 
